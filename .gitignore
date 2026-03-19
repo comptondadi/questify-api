@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / C extensions
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+/venv
+
+# Environment variables
+.env
+
+# Instance-specific data
+/instance/
+*.sqlite
+*.db
+*.db-journal*
+
+# IDE / Editor specific files
+.vscode/
+.idea/
+*.swp
+
+# Operating system files
+.DS_Store
+Thumbs.db
