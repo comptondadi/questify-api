@@ -18,7 +18,8 @@ app = FastAPI(
 
 # --- CORS Middleware ---
 origins = [
-    "http://localhost:3000", # The origin for your React front-end
+    "http://localhost:3000",
+    "https://questify-frontend-black.vercel.app", # The origin for your React front-end
 ]
 
 app.add_middleware(
