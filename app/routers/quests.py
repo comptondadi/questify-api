@@ -104,6 +104,7 @@ def complete_quest(
             user_level=updated_user.level,
             recent_history=recent_history,
             discipline_summary=discipline_summary
+            use_groq=True
         )
     else:
         print(f"DEBUG(router): Quest was already completed. Providing a default insight.")
