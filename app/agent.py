@@ -5,7 +5,6 @@ from ddgs import DDGS
 from groq import Groq
 from .config import settings
 
-# Initialize the Groq client here, it can be used by the agent class
 groq_client = Groq(api_key=settings.groq_api_key)
 
 class QuestAgent:
@@ -14,11 +13,8 @@ class QuestAgent:
     to provide contextual feedback and side quests to the user.
     """
     def __init__(self):
-        # --- Local Ollama Configuration ---
         self.ollama_url = "http://localhost:11434/api/generate"
         self.ollama_model = "llama3"
-        
-        # --- Cloud Groq Configuration ---
         self.groq_model = "llama3-8b-8192"
 
     # =========================================================================
@@ -27,21 +23,31 @@ class QuestAgent:
 
     def _run_ollama_and_parse_json(self, prompt: str) -> dict | None:
         """Sends a prompt to a LOCAL Ollama instance."""
+        response_content = None # Initialize to ensure it's available in except block
         try:
             payload = {"model": self.ollama_model, "prompt": prompt, "stream": False, "format": "json"}
             response = requests.post(self.ollama_url, json=payload, timeout=180)
             response.raise_for_status()
-            json_string = response.json().get("response")
-            return json.loads(json_string) if json_string else None
+            response_data = response.json()
+            response_content = response_data.get("response")
+            
+            print(f"--- RAW OLLAMA RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
+            
+            return json.loads(response_content) if response_content else None
+            
+        except json.JSONDecodeError as e:
+            print(f"!!!!!!!! AGENT JSON PARSE ERROR (Ollama) !!!!!!!!")
+            print(f"Error: {e}")
+            print(f"RAW UNPARSABLE RESPONSE: {response_content}")
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            return None
         except requests.exceptions.RequestException as e:
             print(f"[AGENT ERROR] Could not communicate with Ollama: {e}")
-            return None
-        except (json.JSONDecodeError, KeyError) as e:
-            print(f"[AGENT ERROR] Could not parse JSON from Ollama response: {e}")
             return None
 
     def _run_groq_and_parse_json(self, prompt: str) -> dict | None:
         """Sends a prompt to the CLOUD-BASED Groq API."""
+        response_content = None # Initialize to ensure it's available in except block
         try:
             chat_completion = groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
@@ -49,19 +55,23 @@ class QuestAgent:
                 response_format={"type": "json_object"},
             )
             response_content = chat_completion.choices[0].message.content
-            print(f"--- RAW LLM RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
+
+            # --- "BLACK BOX RECORDER" PRINT ---
+            print(f"--- RAW GROQ RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
+
             return json.loads(response_content) if response_content else None
+
         except json.JSONDecodeError as e:
-            print(f"!!!!!!!! AGENT JSON PARSE ERROR !!!!!!!!")
+            # --- THIS IS THE CRITICAL DEBUG BLOCK ---
+            print(f"!!!!!!!! AGENT JSON PARSE ERROR (Groq) !!!!!!!!")
             print(f"Error: {e}")
-            # This will show us exactly what Groq sent back that wasn't valid JSON.
-            print(f"RAW UNPARSABLE RESPONSE: {response_content}") 
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print(f"RAW UNPARSABLE RESPONSE FROM GROQ: {response_content}")
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             return None
         except Exception as e:
-            print(f"[AGENT ERROR] An unexpected error occurred: {e}")
+            print(f"[AGENT ERROR] Could not communicate with Groq: {e}")
             return None
-    # --- THIS IS THE "TWO-PASS" FIX FOR WEB SEARCH ---
+
     def _search_web(self, query: str, num_results: int = 3) -> tuple[str, list]:
         """
         Performs a web search and returns a formatted string for the LLM prompt
@@ -74,7 +84,6 @@ class QuestAgent:
             if not raw_results:
                 return "No relevant information found.", []
             
-            # Create a simplified string for the LLM prompt (without URLs)
             formatted_string = "\n\n".join(
                 [f"Title: {res['title']}\nSnippet: {res['body']}" for res in raw_results]
             )
@@ -89,7 +98,7 @@ class QuestAgent:
 
     def get_completion_insight(self, quest_title: str, quest_category: str, user_level: int, recent_history: str, discipline_summary: dict, use_groq: bool = False) -> dict:
         """The main 'DM Loop' for quest completion."""
-        print(f"[AGENT] Generating insight for quest: '{quest_title}' (Category: {quest_category})")
+        print(f"[AGENT] Generating insight for quest: '{quest_title}' (using {'Groq' if use_groq else 'Ollama'}).")
 
         llm_runner = self._run_groq_and_parse_json if use_groq else self._run_ollama_and_parse_json
         
@@ -128,7 +137,6 @@ Craft a response and a new "Side Quest". Your response MUST be a JSON object wit
         if not final_insight:
             return {"dialogue": f"Your efforts on '{quest_title}' have been noted in the chronicles!"}
 
-        # --- "TWO-PASS" FIX: Programmatically add the real link ---
         if raw_search_results and "side_quest" in final_insight:
             first_real_link = raw_search_results[0].get('href')
             if first_real_link:
@@ -138,11 +146,12 @@ Craft a response and a new "Side Quest". Your response MUST be a JSON object wit
 
     def get_reengagement_insight(self, user_level: int, days_missed: int, discipline_summary: dict, use_groq: bool = False) -> dict:
         """Generates a 'Redemption Quest' for an inactive user."""
-        print(f"[AGENT] Generating re-engagement insight for user (Lvl {user_level}, missed {days_missed} days).")
+        print(f"[AGENT] Generating re-engagement insight for user (using {'Groq' if use_groq else 'Ollama'}).")
         
         llm_runner = self._run_groq_and_parse_json if use_groq else self._run_ollama_and_parse_json
         
-        prompt = f"""...""" # The prompt for this can be similarly structured
+        # ... (The prompt for this function should be fully fleshed out as well) ...
+        prompt = f"""...""" 
         reengagement_insight = llm_runner(prompt)
 
         if not reengagement_insight: # Fallback logic
