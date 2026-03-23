@@ -43,7 +43,7 @@ def daily_check_in(
                 reengagement_insight = agent.get_reengagement_insight(
                     user_level=current_user.level,
                     days_missed=days_missed,
-                    discipline_summary=discipline_summary
+                    discipline_summary=discipline_summary,
                     use_groq=True
                 )
 
