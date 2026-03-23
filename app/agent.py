@@ -49,11 +49,18 @@ class QuestAgent:
                 response_format={"type": "json_object"},
             )
             response_content = chat_completion.choices[0].message.content
+            print(f"--- RAW LLM RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
             return json.loads(response_content) if response_content else None
-        except Exception as e:
-            print(f"[AGENT ERROR] Could not communicate with Groq: {e}")
+        except json.JSONDecodeError as e:
+            print(f"!!!!!!!! AGENT JSON PARSE ERROR !!!!!!!!")
+            print(f"Error: {e}")
+            # This will show us exactly what Groq sent back that wasn't valid JSON.
+            print(f"RAW UNPARSABLE RESPONSE: {response_content}") 
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             return None
-
+        except Exception as e:
+            print(f"[AGENT ERROR] An unexpected error occurred: {e}")
+            return None
     # --- THIS IS THE "TWO-PASS" FIX FOR WEB SEARCH ---
     def _search_web(self, query: str, num_results: int = 3) -> tuple[str, list]:
         """
