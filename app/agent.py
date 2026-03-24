@@ -15,8 +15,7 @@ class QuestAgent:
     def __init__(self):
         self.ollama_url = "http://localhost:11434/api/generate"
         self.ollama_model = "llama3"
-        self.groq_model = "gemma-7b-it"
-
+        self.groq_model = "mixtral-8x7b-32768"
     # =========================================================================
     #                    CORE LLM & TOOLING METHODS
     # =========================================================================
