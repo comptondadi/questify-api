@@ -18,7 +18,7 @@ class QuestAgent:
     """
     def __init__(self):
         # We specify the model here, one of Fireworks' stable, high-performance models
-        self.model = "accounts/fireworks/models/mixtral-8x7b-instruct"
+        self.model =  "accounts/fireworks/models/llama-v3-8b-instruct"
 
     def _run_llm_and_parse_json(self, prompt: str) -> dict | None:
         """Sends a prompt to the Fireworks.ai API and robustly parses the JSON response."""
