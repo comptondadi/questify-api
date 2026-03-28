@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int
 
     # Third-party API keys
-    groq_api_key: str
+    fireworks_api_key: str
 
     class Config:
         # This tells pydantic-settings to load variables from a file named .env
