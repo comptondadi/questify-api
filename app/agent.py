@@ -1,81 +1,62 @@
 # app/agent.py
-import requests
 import json
+from openai import OpenAI # Use the OpenAI client, as Fireworks.ai is compatible
 from ddgs import DDGS 
-from groq import Groq
 from .config import settings
 
-groq_client = Groq(api_key=settings.groq_api_key)
+# Initialize the client, pointing it to the Fireworks.ai API endpoint.
+# It automatically reads your FIREWORKS_API_KEY from the environment settings.
+fireworks_client = OpenAI(
+    base_url = "https://api.fireworks.ai/inference/v1",
+    api_key = settings.fireworks_api_key,
+)
 
 class QuestAgent:
     """
-    The Dungeon Master for Questify. This agent uses an LLM
+    The Dungeon Master for Questify. This agent uses the Fireworks.ai API
     to provide contextual feedback and side quests to the user.
     """
     def __init__(self):
-        self.ollama_url = "http://localhost:11434/api/generate"
-        self.ollama_model = "llama3"
-        self.groq_model = "mixtral-8x7b-32768"
-    # =========================================================================
-    #                    CORE LLM & TOOLING METHODS
-    # =========================================================================
+        # We specify the model here, one of Fireworks' stable, high-performance models
+        self.model = "accounts/fireworks/models/mixtral-8x7b-instruct"
 
-    def _run_ollama_and_parse_json(self, prompt: str) -> dict | None:
-        """Sends a prompt to a LOCAL Ollama instance."""
-        response_content = None # Initialize to ensure it's available in except block
+    def _run_llm_and_parse_json(self, prompt: str) -> dict | None:
+        """Sends a prompt to the Fireworks.ai API and robustly parses the JSON response."""
+        response_content = None
         try:
-            payload = {"model": self.ollama_model, "prompt": prompt, "stream": False, "format": "json"}
-            response = requests.post(self.ollama_url, json=payload, timeout=180)
-            response.raise_for_status()
-            response_data = response.json()
-            response_content = response_data.get("response")
-            
-            print(f"--- RAW OLLAMA RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
-            
-            return json.loads(response_content) if response_content else None
-            
-        except json.JSONDecodeError as e:
-            print(f"!!!!!!!! AGENT JSON PARSE ERROR (Ollama) !!!!!!!!")
-            print(f"Error: {e}")
-            print(f"RAW UNPARSABLE RESPONSE: {response_content}")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            return None
-        except requests.exceptions.RequestException as e:
-            print(f"[AGENT ERROR] Could not communicate with Ollama: {e}")
-            return None
-
-    def _run_groq_and_parse_json(self, prompt: str) -> dict | None:
-        """Sends a prompt to the CLOUD-BASED Groq API."""
-        response_content = None # Initialize to ensure it's available in except block
-        try:
-            chat_completion = groq_client.chat.completions.create(
+            print("[AGENT] Sending prompt to Fireworks.ai...")
+            chat_completion = fireworks_client.chat.completions.create(
+                model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                model=self.groq_model,
                 response_format={"type": "json_object"},
+                temperature=0.7, # Add a little creativity
+                max_tokens=1024, # Limit the response size to prevent overly long answers
             )
             response_content = chat_completion.choices[0].message.content
+            
+            print(f"--- RAW FIREWORKS RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
 
-            # --- "BLACK BOX RECORDER" PRINT ---
-            print(f"--- RAW GROQ RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
-
-            return json.loads(response_content) if response_content else None
+            # Robustly find and parse the JSON object within the response string
+            json_start = response_content.find('{')
+            json_end = response_content.rfind('}') + 1
+            if json_start != -1 and json_end != -1:
+                json_string = response_content[json_start:json_end]
+                return json.loads(json_string)
+            else:
+                # If no JSON object is found at all, raise an error to be caught below
+                raise json.JSONDecodeError("No JSON object found in the LLM response.", response_content, 0)
 
         except json.JSONDecodeError as e:
-            # --- THIS IS THE CRITICAL DEBUG BLOCK ---
-            print(f"!!!!!!!! AGENT JSON PARSE ERROR (Groq) !!!!!!!!")
+            print(f"!!!!!!!! AGENT JSON PARSE ERROR (Fireworks) !!!!!!!!")
             print(f"Error: {e}")
-            print(f"RAW UNPARSABLE RESPONSE FROM GROQ: {response_content}")
-            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print(f"RAW UNPARSABLE RESPONSE: {response_content}")
             return None
         except Exception as e:
-            print(f"[AGENT ERROR] Could not communicate with Groq: {e}")
+            print(f"[AGENT ERROR] Could not communicate with Fireworks.ai: {e}")
             return None
 
     def _search_web(self, query: str, num_results: int = 3) -> tuple[str, list]:
-        """
-        Performs a web search and returns a formatted string for the LLM prompt
-        AND the raw list of result objects for programmatic use.
-        """
+        """Performs a web search and returns a formatted string and raw results."""
         print(f"[AGENT ACTION] Performing web search for: '{query}'")
         try:
             with DDGS() as ddgs:
@@ -83,36 +64,24 @@ class QuestAgent:
             if not raw_results:
                 return "No relevant information found.", []
             
-            formatted_string = "\n\n".join(
-                [f"Title: {res['title']}\nSnippet: {res['body']}" for res in raw_results]
-            )
+            formatted_string = "\n\n".join([f"Title: {res['title']}\nSnippet: {res['body']}" for res in raw_results])
             return formatted_string, raw_results
         except Exception as e:
             print(f"[AGENT ERROR] Web search failed: {e}")
             return "Web search failed.", []
 
-    # =========================================================================
-    #                       MAIN AGENT LOGIC METHODS
-    # =========================================================================
-
-    def get_completion_insight(self, quest_title: str, quest_category: str, user_level: int, recent_history: str, discipline_summary: dict, use_groq: bool = False) -> dict:
+    def get_completion_insight(self, quest_title: str, quest_category: str, user_level: int, recent_history: str, discipline_summary: dict) -> dict:
         """The main 'DM Loop' for quest completion."""
-        print(f"[AGENT] Generating insight for quest: '{quest_title}' (using {'Groq' if use_groq else 'Ollama'}).")
-
-        llm_runner = self._run_groq_and_parse_json if use_groq else self._run_ollama_and_parse_json
+        print(f"[AGENT] Generating insight for quest: '{quest_title}'")
         
-        summary_str = (
-            f"User Performance: {discipline_summary.get('completions_today', 0)} completions today, "
-            f"{discipline_summary.get('completions_this_week', 0)} this week. "
-            f"Focusing on {discipline_summary.get('favorite_category', 'N/A')}."
-        )
+        summary_str = f"User Performance: {discipline_summary.get('completions_today', 0)} completions today, {discipline_summary.get('completions_this_week', 0)} this week. Focusing on {discipline_summary.get('favorite_category', 'N/A')}."
 
         reasoning_prompt = f"""
 A user at Level {user_level} completed "{quest_title}" (Category: {quest_category}). Context: {summary_str}. History: {recent_history}.
 Generate a specific, relevant web search query to help them improve.
 Respond with JSON: {{"search_query": "string"}}
 """
-        search_json = llm_runner(reasoning_prompt)
+        search_json = self._run_llm_and_parse_json(reasoning_prompt)
         
         if not search_json or "search_query" not in search_json:
             return {"dialogue": f"You have conquered '{quest_title}'! Well done, Traveler."}
@@ -121,7 +90,7 @@ Respond with JSON: {{"search_query": "string"}}
         search_results_str, raw_search_results = self._search_web(search_query)
 
         output_prompt = f"""
-You are the Chronicler, a Dungeon Master for Questify. A user (Lvl {user_level}) completed "{quest_title}".
+You are the Chronicler, a wise Dungeon Master for Questify. A user (Lvl {user_level}) completed "{quest_title}".
 Their context: {summary_str} and {recent_history}.
 Your web search for "{search_query}" found:
 ---
@@ -129,9 +98,9 @@ Your web search for "{search_query}" found:
 ---
 Craft a response and a new "Side Quest". Your response MUST be a JSON object with "dialogue" and "side_quest" keys.
 - "dialogue": Your narrative commentary.
-- "side_quest": An object with 'title', 'description', 'category', 'xp_value' (20-75). DO NOT include a 'resource_link'.
+- "side_quest": An object with 'title', 'description', 'category', 'xp_value' (integer between 20-75). DO NOT include a 'resource_link'.
 """
-        final_insight = llm_runner(output_prompt)
+        final_insight = self._run_llm_and_parse_json(output_prompt)
 
         if not final_insight:
             return {"dialogue": f"Your efforts on '{quest_title}' have been noted in the chronicles!"}
@@ -143,15 +112,19 @@ Craft a response and a new "Side Quest". Your response MUST be a JSON object wit
         
         return final_insight
 
-    def get_reengagement_insight(self, user_level: int, days_missed: int, discipline_summary: dict, use_groq: bool = False) -> dict:
+    def get_reengagement_insight(self, user_level: int, days_missed: int, discipline_summary: dict) -> dict:
         """Generates a 'Redemption Quest' for an inactive user."""
-        print(f"[AGENT] Generating re-engagement insight for user (using {'Groq' if use_groq else 'Ollama'}).")
+        print(f"[AGENT] Generating re-engagement insight for user who missed {days_missed} days.")
         
-        llm_runner = self._run_groq_and_parse_json if use_groq else self._run_ollama_and_parse_json
-        
-        # ... (The prompt for this function should be fully fleshed out as well) ...
-        prompt = f"""...""" 
-        reengagement_insight = llm_runner(prompt)
+        summary_str = f"User's Performance (before this login): {discipline_summary.get('completions_this_week', 0)} completions this week. Focusing on {discipline_summary.get('favorite_category', 'N/A')}."
+
+        prompt = f"""
+You are the Chronicler, a Dungeon Master for Questify. A user (Lvl {user_level}) has returned after being inactive for {days_missed} days. Their past performance: {summary_str}.
+Craft a welcoming but firm message to re-engage them. Propose a simple, high-value "Redemption Quest".
+Your response MUST be a JSON object with "dialogue" and "redemption_quest" keys.
+"redemption_quest" should be an object with 'title', 'description', 'category' ('REDEMPTION'), and 'xp_value' (50-100).
+"""
+        reengagement_insight = self._run_llm_and_parse_json(prompt)
 
         if not reengagement_insight: # Fallback logic
             return {
