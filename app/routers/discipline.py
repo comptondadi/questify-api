@@ -44,7 +44,6 @@ def daily_check_in(
                     user_level=current_user.level,
                     days_missed=days_missed,
                     discipline_summary=discipline_summary,
-                    use_groq=True
                 )
 
                 # Create the Redemption Quest proposed by the agent
