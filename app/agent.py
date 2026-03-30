@@ -17,8 +17,8 @@ class QuestAgent:
     to provide contextual feedback and side quests to the user.
     """
     def __init__(self):
-        # We specify the model here, one of Fireworks' stable, high-performance models
-         self.model = "accounts/fireworks/models/llama-v3-8b-instruct"
+        self.ollama_url = f"{settings.ollama_host}/api/generate"
+        self.model = "llama3"
 
     def _run_llm_and_parse_json(self, prompt: str) -> dict | None:
         """Sends a prompt to the Fireworks.ai API and robustly parses the JSON response."""
