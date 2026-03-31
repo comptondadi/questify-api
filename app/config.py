@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     algorithm: str
     access_token_expire_minutes: int
 
-    # Third-party API keys
-    fireworks_api_key: str
+    
+    ollama_host: str 
 
     class Config:
         # This tells pydantic-settings to load variables from a file named .env

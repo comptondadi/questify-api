@@ -1,58 +1,44 @@
 # app/agent.py
+import requests
 import json
-from openai import OpenAI 
-from ddgs import DDGS 
+from ddgs import DDGS
 from .config import settings
-
-# Initialize the client, pointing it to the Fireworks.ai API endpoint.
-# It automatically reads your FIREWORKS_API_KEY from the environment settings.
-fireworks_client = OpenAI(
-    base_url = "https://api.fireworks.ai/inference/v1",
-    api_key = settings.fireworks_api_key,
-)
 
 class QuestAgent:
     """
-    The Dungeon Master for Questify. This agent uses the Fireworks.ai API
-    to provide contextual feedback and side quests to the user.
+    The Dungeon Master for Questify. This agent uses an Ollama instance
+    (either local or tunneled via ngrok) to provide contextual feedback.
     """
     def __init__(self):
+        # Reads the host (e.g., http://localhost:11434 or your ngrok URL) from settings
         self.ollama_url = f"{settings.ollama_host}/api/generate"
-        self.model = "llama3"
+        self.model = "llama3" # The model you are running in Ollama
 
     def _run_llm_and_parse_json(self, prompt: str) -> dict | None:
-        """Sends a prompt to the Fireworks.ai API and robustly parses the JSON response."""
+        """Sends a prompt to the configured Ollama instance and robustly parses the JSON."""
         response_content = None
         try:
-            print("[AGENT] Sending prompt to Fireworks.ai...")
-            chat_completion = fireworks_client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=0.7, # Add a little creativity
-                max_tokens=1024, # Limit the response size to prevent overly long answers
-            )
-            response_content = chat_completion.choices[0].message.content
+            print(f"[AGENT] Sending prompt to Ollama at {self.ollama_url}...")
+            payload = {"model": self.model, "prompt": prompt, "stream": False, "format": "json"}
+            response = requests.post(self.ollama_url, json=payload, timeout=180)
+            response.raise_for_status()
+            response_content = response.json().get("response")
             
-            print(f"--- RAW FIREWORKS RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
-
-            # Robustly find and parse the JSON object within the response string
+            print(f"--- RAW OLLAMA RESPONSE ---\n{response_content}\n--- END RAW RESPONSE ---")
+            
             json_start = response_content.find('{')
             json_end = response_content.rfind('}') + 1
             if json_start != -1 and json_end != -1:
                 json_string = response_content[json_start:json_end]
                 return json.loads(json_string)
             else:
-                # If no JSON object is found at all, raise an error to be caught below
-                raise json.JSONDecodeError("No JSON object found in the LLM response.", response_content, 0)
+                raise json.JSONDecodeError("No JSON object found in Ollama response.", response_content, 0)
 
         except json.JSONDecodeError as e:
-            print(f"!!!!!!!! AGENT JSON PARSE ERROR (Fireworks) !!!!!!!!")
-            print(f"Error: {e}")
-            print(f"RAW UNPARSABLE RESPONSE: {response_content}")
+            print(f"!!!!!!!! AGENT JSON PARSE ERROR (Ollama) !!!!!!!!\n{e}")
             return None
-        except Exception as e:
-            print(f"[AGENT ERROR] Could not communicate with Fireworks.ai: {e}")
+        except requests.exceptions.RequestException as e:
+            print(f"[AGENT ERROR] Could not communicate with Ollama: {e}")
             return None
 
     def _search_web(self, query: str, num_results: int = 3) -> tuple[str, list]:
@@ -71,7 +57,7 @@ class QuestAgent:
             return "Web search failed.", []
 
     def get_completion_insight(self, quest_title: str, quest_category: str, user_level: int, recent_history: str, discipline_summary: dict) -> dict:
-        """The main 'DM Loop' for quest completion."""
+        """The main 'DM Loop' for quest completion, using the single Ollama runner."""
         print(f"[AGENT] Generating insight for quest: '{quest_title}'")
         
         summary_str = f"User Performance: {discipline_summary.get('completions_today', 0)} completions today, {discipline_summary.get('completions_this_week', 0)} this week. Focusing on {discipline_summary.get('favorite_category', 'N/A')}."
@@ -90,7 +76,7 @@ Respond with JSON: {{"search_query": "string"}}
         search_results_str, raw_search_results = self._search_web(search_query)
 
         output_prompt = f"""
-You are the Chronicler, a wise Dungeon Master for Questify. A user (Lvl {user_level}) completed "{quest_title}".
+You are the Chronicler, a Dungeon Master for Questify. A user (Lvl {user_level}) completed "{quest_title}".
 Their context: {summary_str} and {recent_history}.
 Your web search for "{search_query}" found:
 ---
@@ -113,10 +99,10 @@ Craft a response and a new "Side Quest". Your response MUST be a JSON object wit
         return final_insight
 
     def get_reengagement_insight(self, user_level: int, days_missed: int, discipline_summary: dict) -> dict:
-        """Generates a 'Redemption Quest' for an inactive user."""
+        """Generates a 'Redemption Quest' for an inactive user, using the single Ollama runner."""
         print(f"[AGENT] Generating re-engagement insight for user who missed {days_missed} days.")
         
-        summary_str = f"User's Performance (before this login): {discipline_summary.get('completions_this_week', 0)} completions this week. Focusing on {discipline_summary.get('favorite_category', 'N/A')}."
+        summary_str = f"User's Performance (before login): {discipline_summary.get('completions_this_week', 0)} completions this week. Focusing on {discipline_summary.get('favorite_category', 'N/A')}."
 
         prompt = f"""
 You are the Chronicler, a Dungeon Master for Questify. A user (Lvl {user_level}) has returned after being inactive for {days_missed} days. Their past performance: {summary_str}.
