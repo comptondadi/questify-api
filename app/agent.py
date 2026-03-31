@@ -20,7 +20,10 @@ class QuestAgent:
         try:
             print(f"[AGENT] Sending prompt to Ollama at {self.ollama_url}...")
             payload = {"model": self.model, "prompt": prompt, "stream": False, "format": "json"}
-            response = requests.post(self.ollama_url, json=payload, timeout=180)
+            headers = {
+              "ngrok-skip-browser-warning": "true"
+            }
+            response = requests.post(self.ollama_url, json=payload, headers=headers, timeout=180)
             response.raise_for_status()
             response_content = response.json().get("response")
             
