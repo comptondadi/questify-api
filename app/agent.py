@@ -21,7 +21,8 @@ class QuestAgent:
             print(f"[AGENT] Sending prompt to Ollama at {self.ollama_url}...")
             payload = {"model": self.model, "prompt": prompt, "stream": False, "format": "json"}
             headers = {
-              "ngrok-skip-browser-warning": "true"
+              "ngrok-skip-browser-warning": "true",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"
             }
             response = requests.post(self.ollama_url, json=payload, headers=headers, timeout=180)
             response.raise_for_status()
