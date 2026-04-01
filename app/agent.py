@@ -11,7 +11,7 @@ class QuestAgent:
     """
     def __init__(self):
         # Reads the host (e.g., http://localhost:11434 or your ngrok URL) from settings
-        self.ollama_url = f"{settings.ollama_host}/api/generate"
+        self.ollama_url = "http://localhost:11434/api/generate"
         self.model = "llama3" # The model you are running in Ollama
 
     def _run_llm_and_parse_json(self, prompt: str) -> dict | None:

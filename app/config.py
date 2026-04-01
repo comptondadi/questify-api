@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int
 
     
-    ollama_host: str 
 
     class Config:
         # This tells pydantic-settings to load variables from a file named .env
